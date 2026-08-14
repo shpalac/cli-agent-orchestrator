@@ -69,6 +69,55 @@ CAO_MCP_TOOLS_BY_ROLE: Dict[str, List[str]] = {
     ],
 }
 
+# The complete cao-mcp-server tool set (mcp_server/server.py). Used to compute
+# the DISABLED complement for a role on providers that support per-tool MCP
+# gating via a deny list (codex's ``disabled_tools``) rather than an allow
+# list. Keep in sync with the ``@mcp.tool()`` registrations.
+_ALL_CAO_MCP_TOOLS: List[str] = [
+    "handoff",
+    "assign",
+    "send_message",
+    "emit_ui",
+    "answer_user_prompt",
+    "load_skill",
+    "delete_terminal",
+    "list_siblings",
+    "update_metadata",
+    "find_profiles",
+    "memory_store",
+    "memory_recall",
+    "memory_forget",
+    "report_outcome",
+    "list_outcomes",
+    "store_lesson",
+    "workflow_return",
+    "workflow_run",
+    "workflow_resume",
+    "workflow_cancel",
+    "workflow_start",
+    "workflow_status",
+    "workflow_result",
+    "workflow_list",
+    "workflow_wait",
+    "workflow_events",
+]
+
+
+def codex_disabled_mcp_tools(role: Optional[str]) -> List[str]:
+    """Compute the cao-mcp-server tools a codex profile with ``role`` must NOT see.
+
+    Codex gates MCP tools via ``mcp_servers.<name>.disabled_tools`` (a deny
+    list) and names them ``mcp__<server>__<tool>``. The deny set is the
+    complement of the role's allowlist from ``CAO_MCP_TOOLS_BY_ROLE`` — the
+    same single source of truth the opencode per-role grant uses, so both
+    providers gate identically. Unknown roles return ``[]`` (nothing disabled,
+    backward compatible — the pre-gating behavior).
+    """
+    allowed = CAO_MCP_TOOLS_BY_ROLE.get(role or "")
+    if allowed is None:
+        return []
+    return [f"mcp__cao-mcp-server__{tool}" for tool in _ALL_CAO_MCP_TOOLS if tool not in allowed]
+
 
 def to_opencode_agent_id(profile_name: str) -> str:
     """Derive the OpenCode agent ID from a CAO profile name.

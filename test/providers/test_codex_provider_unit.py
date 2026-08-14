@@ -228,6 +228,53 @@ class TestCodexBuildCommand:
         # Tool timeout must be a TOML float (600.0) for Codex's f64 deserializer
         assert "mcp_servers.cao-mcp-server.tool_timeout_sec=600.0" in command
 
+    @patch("cli_agent_orchestrator.providers.codex.load_agent_profile")
+    def test_supervisor_role_disables_worker_only_mcp_tools(self, mock_load_profile):
+        """A supervisor keeps orchestration tools; worker-only/script-tier tools
+        are disabled via mcp_servers.<name>.disabled_tools (token efficiency)."""
+        mock_profile = MagicMock()
+        mock_profile.model = None
+        mock_profile.system_prompt = ""
+        mock_profile.role = "supervisor"
+        mock_profile.mcpServers = {
+            "cao-mcp-server": {
+                "type": "stdio",
+                "command": "cao-mcp-server",
+                "args": [],
+            }
+        }
+        mock_profile.codexProfile = None
+        mock_load_profile.return_value = mock_profile
+
+        provider = CodexProvider("test1234", "test-session", "window-0", "code_supervisor")
+        command = provider._build_codex_command()
+
+        # The disabled_tools list is emitted and contains worker/script-tier tools.
+        assert "mcp_servers.cao-mcp-server.disabled_tools=" in command
+        assert "mcp__cao-mcp-server__emit_ui" in command
+        assert "mcp__cao-mcp-server__workflow_run" in command
+        # The orchestration tools the supervisor needs are NOT disabled.
+        assert "mcp__cao-mcp-server__handoff" not in command
+        assert "mcp__cao-mcp-server__assign" not in command
+
+    @patch("cli_agent_orchestrator.providers.codex.load_agent_profile")
+    def test_roleless_profile_emits_no_disabled_tools(self, mock_load_profile):
+        """No role -> no disabled_tools override (backward compatible)."""
+        mock_profile = MagicMock()
+        mock_profile.model = None
+        mock_profile.system_prompt = ""
+        mock_profile.role = None
+        mock_profile.mcpServers = {
+            "cao-mcp-server": {"type": "stdio", "command": "cao-mcp-server", "args": []}
+        }
+        mock_profile.codexProfile = None
+        mock_load_profile.return_value = mock_profile
+
+        provider = CodexProvider("test1234", "test-session", "window-0", "code_supervisor")
+        command = provider._build_codex_command()
+
+        assert "disabled_tools" not in command
+
     @patch("cli_agent_orchestrator.providers.codex.resolve_mcp_server_config")
     @patch("cli_agent_orchestrator.providers.codex.load_agent_profile")
     def test_bundled_mcp_command_is_resolved(self, mock_load_profile, mock_resolve):

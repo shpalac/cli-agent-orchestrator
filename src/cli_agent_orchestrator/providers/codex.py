@@ -14,12 +14,19 @@ from cli_agent_orchestrator.constants import CAO_HOME_DIR
 from cli_agent_orchestrator.models.terminal import TerminalStatus
 from cli_agent_orchestrator.providers.base import (
     BaseProvider,
-    ProviderError as BaseProviderError,
+)
+from cli_agent_orchestrator.providers.base import ProviderError as BaseProviderError
+from cli_agent_orchestrator.providers.base import (
     resolve_provider_binary,
 )
 from cli_agent_orchestrator.services.settings_service import get_server_settings
 from cli_agent_orchestrator.utils.agent_profiles import load_agent_profile
 from cli_agent_orchestrator.utils.mcp_resolution import resolve_mcp_server_config
+from cli_agent_orchestrator.utils.opencode_config import (
+    _ALL_CAO_MCP_TOOLS,
+    CAO_MCP_TOOLS_BY_ROLE,
+    codex_disabled_mcp_tools,
+)
 from cli_agent_orchestrator.utils.terminal import wait_for_shell, wait_until_status
 from cli_agent_orchestrator.utils.text import strip_terminal_escapes
 
@@ -628,6 +635,19 @@ class CodexProvider(BaseProvider):
                     # is silently rejected and falls back to the 60s default.
                     if "tool_timeout_sec" not in cfg:
                         command_parts.extend(["-c", f"{prefix}.tool_timeout_sec=600.0"])
+                    # Per-role MCP tool gating (token efficiency, mirrors the
+                    # opencode allowlist): Codex loads every cao-mcp-server tool
+                    # schema (~8.5k tokens) into the supervisor's context. Its
+                    # config supports mcp_servers.<name>.disabled_tools, so when
+                    # the profile declares a role we disable the tools that role
+                    # does not use — the supervisor keeps the orchestration trio
+                    # and drops the worker-only / script-tier machinery. Tool
+                    # names use Codex's mcp__<server>__<tool> identifier form.
+                    if server_name == "cao-mcp-server":
+                        disabled = codex_disabled_mcp_tools(profile.role)
+                        if disabled:
+                            disabled_toml = "[" + ", ".join(_toml_scalar(t) for t in disabled) + "]"
+                            command_parts.extend(["-c", f"{prefix}.disabled_tools={disabled_toml}"])
 
             # Inline Codex config overrides (-c key=value). Lets a profile set
             # per-agent Codex knobs — reasoning effort, service tier, fast mode,
